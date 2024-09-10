@@ -2,7 +2,9 @@
 from enum import Enum
 from .error import *
 
-class Troop2(Enum):
+DEBUG = True
+
+class TroopName2(Enum):
     '''棋子名（双字）'''
     司令 = 40
     军长 = 39
@@ -15,8 +17,9 @@ class Troop2(Enum):
     工兵 = 32
     地雷 = 31
     炸弹 = 30
+    UNK  =  0
 
-class Troop1(Enum):
+class TroopName1(Enum):
     '''棋子名（单字）'''
     司 = 40
     军 = 39
@@ -29,6 +32,7 @@ class Troop1(Enum):
     兵 = 32
     雷 = 31
     炸 = 30
+    UNK = 0
 
 class BoardPositionType(Enum):
     '''棋盘位置类型'''
@@ -39,6 +43,8 @@ class BoardPositionType(Enum):
 
 class BoardPosition:
     '''棋盘位置'''
+    board: 'Board'
+    '''所属棋盘'''
     battlefield: int
     '''战场位置
     
@@ -75,13 +81,16 @@ class BoardPosition:
 #                                     01,07 01,08 01,09 01,10 01,11                                     #
   ##### ##### ##### ##### ##### ##### ##### ##### ##### ##### ##### ##### ##### ##### ##### ##### ##### 
 
-    def __init__(self, battlefield: int|None = None, row: int|None = None, col: int|None = None, view: int|None = None, cood: tuple[int, int]|None = None):
+    def __init__(self, board: 'Board', battlefield: int|None = None, row: int|None = None, col: int|None = None, view: int|None = None, cood: tuple[int, int]|None = None):
+        self.board = board
         if battlefield is not None and row is not None and col is not None and view is not None:
             self.init_relative(battlefield, row, col, view)
         elif cood is not None:
             self.init_cood(cood)
         else:
-            raise AssertionError('Cannot init BoardPosition')
+            # raise AssertionError('Cannot init BoardPosition')
+            if DEBUG:
+                print('basis not provided')
 
     def init_relative(self, battlefield: int, row: int, col: int, view: int):
         '''获取标准棋盘绝对位置。传入的位置参数为视角位置，view为视角方向'''
@@ -196,16 +205,27 @@ class Troop:
     _is_simple: bool
     '''是否为单字'''
     value: int
-    '''棋子值'''
+    '''棋子值 30-40'''
     owner: 'Player'
     '''棋子所属玩家'''
     hidden: bool
     '''是否隐藏'''
+    position: BoardPosition
+    '''棋子位置'''
+    @property
+    def name(self) -> str:
+        '''棋子名'''
+        if self.hidden:
+            return ''
+        if self._is_simple:
+            return TroopName1(self.value).name
+        else:
+            return TroopName2(self.value).name
 
 
 
 class Board:
-    '''棋盘类，操作交互接口'''
+    '''棋盘类，用户可见的棋盘以及服务器、用户操作交互接口'''
     pass
 
 
