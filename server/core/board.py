@@ -1,6 +1,7 @@
 
 from enum import Enum
 from .error import *
+from .player import Player
 
 DEBUG = True
 
@@ -81,6 +82,9 @@ class BoardPosition:
 #                                     01,07 01,08 01,09 01,10 01,11                                     #
   ##### ##### ##### ##### ##### ##### ##### ##### ##### ##### ##### ##### ##### ##### ##### ##### ##### 
 
+    is_valid: bool
+    '''是否有效'''
+
     def __init__(self, board: 'Board', battlefield: int|None = None, row: int|None = None, col: int|None = None, view: int|None = None, cood: tuple[int, int]|None = None):
         self.board = board
         if battlefield is not None and row is not None and col is not None and view is not None:
@@ -89,11 +93,12 @@ class BoardPosition:
             self.init_cood(cood)
         else:
             # raise AssertionError('Cannot init BoardPosition')
+            self.is_valid = False
             if DEBUG:
                 print('basis not provided')
 
     def init_relative(self, battlefield: int, row: int, col: int, view: int):
-        '''获取标准棋盘绝对位置。传入的位置参数为视角位置，view为视角方向'''
+        '''获取标准棋盘绝对位置。传入的位置参数为视角位置，view为视角方向(仅影响九宫)'''
         assert 0 <= battlefield <= 4, f'Invalid battlefield: {battlefield}'
         assert 1 <= view <= 4, f'Invalid view: {view}'
         if battlefield == 0:
@@ -139,6 +144,7 @@ class BoardPosition:
                 self.cood = (12 - self.col, 7 - self.row)
             else:
                 raise NotExpected(f'Invalid battlefield: {battlefield}')
+        self.is_valid = True
 
     def init_cood(self, cood: tuple[int, int]):
         r, c = cood
@@ -170,6 +176,7 @@ class BoardPosition:
             raise AssertionError(f'Invalid cood: {cood}')
         # 计算位置类型
         self._calc_type()
+        self.is_valid = True
 
     def _calc_type(self) -> None:
         '''计算位置类型'''
@@ -200,32 +207,199 @@ class BoardPosition:
             else:
                 raise NotExpected(f'Invalid row: {self.row}')
 
+    def neighbours(self) -> list['BoardPosition']:
+        '''获取相邻位置'''
+        neighbours = []
+        if self.type_ == BoardPositionType.大本营:
+            return neighbours # TODO
+        elif self.type_ == BoardPositionType.铁路:
+            # 基本邻居
+            for i in [-1, 1]:
+                target_position = BoardPosition(self.board, cood=(self.cood[0] + i, self.cood[1]))
+                if target_position.is_valid:
+                    neighbours.append(target_position)
+            for j in [-1, 1]:
+                target_position = BoardPosition(self.board, cood=(self.cood[0], self.cood[1] + j))
+                if target_position.is_valid:
+                    neighbours.append(target_position)
+
+            # 特例邻居
+            if self.battlefield == 0:
+                # 九宫中心邻居（间隔为2）
+                for i in [-1, 1]:
+                    try:
+                        target_position = BoardPosition(
+                            board=self.board,
+                            battlefield=0,
+                            row=self.row + i,
+                            col=self.col,
+                            view=1
+                        )
+                        if target_position.is_valid:
+                            neighbours.append(target_position)
+                    except AssertionError:
+                        pass
+                for j in [-1, 1]:
+                    try:
+                        target_position = BoardPosition(
+                            board=self.board,
+                            battlefield=0,
+                            row=self.row,
+                            col=self.col + j,
+                            view=1
+                        )
+                        if target_position.is_valid:
+                            neighbours.append(target_position)
+                    except AssertionError:
+                        pass
+            else:
+                # 玩家阵地接壤邻居
+                if self.row == 1 and self.col == 1:
+                    # 玩家阵地左上角
+                    target_position = BoardPosition(
+                        board=self.board,
+                        battlefield=self.battlefield - 1 if self.battlefield != 1 else 4,
+                        row=1,
+                        col=5,
+                        view=1
+                    )
+                    if target_position.is_valid:
+                        neighbours.append(target_position)
+                elif self.row == 1 and self.col == 5:
+                    # 玩家阵地右上角
+                    target_position = BoardPosition(
+                        board=self.board,
+                        battlefield=self.battlefield + 1 if self.battlefield != 4 else 1,
+                        row=1,
+                        col=1,
+                        view=1
+                    )
+                    if target_position.is_valid:
+                        neighbours.append(target_position)
+        elif self.type_ == BoardPositionType.公路:
+            for i in [-1, 1]:
+                target_position = BoardPosition(self.board, cood=(self.cood[0] + i, self.cood[1]))
+                if target_position.is_valid:
+                    neighbours.append(target_position)
+            for j in [-1, 1]:
+                target_position = BoardPosition(self.board, cood=(self.cood[0], self.cood[1] + j))
+                if target_position.is_valid:
+                    neighbours.append(target_position)
+        elif self.type_ == BoardPositionType.行营:
+            for i in [-1, 0, 1]:
+                for j in [-1, 0, 1]:
+                    if i == 0 and j == 0:
+                        continue
+                    target_position = BoardPosition(self.board, cood=(self.cood[0] + i, self.cood[1] + j))
+                    if target_position.is_valid:
+                        neighbours.append(target_position)
+        return neighbours
+
 class Troop:
     '''棋子类'''
-    _is_simple: bool
+
+    is_simple: bool
     '''是否为单字'''
-    value: int
-    '''棋子值 30-40'''
-    owner: 'Player'
-    '''棋子所属玩家'''
-    hidden: bool
-    '''是否隐藏'''
-    position: BoardPosition
-    '''棋子位置'''
     @property
     def name(self) -> str:
         '''棋子名'''
-        if self.hidden:
-            return ''
-        if self._is_simple:
+        if self.is_simple:
             return TroopName1(self.value).name
         else:
             return TroopName2(self.value).name
-
+    value: int
+    '''棋子值 30-40'''
+    visible_to: list[Player]
+    '''可见玩家，第一个为所有者'''
+    @property
+    def owner(self) -> Player:
+        '''所有者'''
+        return self.visible_to[0]
+    position: BoardPosition
+    '''棋子位置'''
+    
+    def __init__(self, value: int, position: BoardPosition, visible_to: list[Player] = None, owner: Player = None, is_simple: bool = False):
+        self.is_simple = is_simple
+        assert 30 <= value <= 40, f'Invalid value: {value}. Must be 30-40'
+        self.value = value
+        if visible_to is not None:
+            self.visible_to = visible_to
+        elif owner is not None:
+            self.visible_to = [owner]
+        else:
+            raise AssertionError('Cannot init Troop: Owner or Visible_to required')
+        self.position = position
+    
+    def battle(self, other: 'Troop') -> 'Troop|None':
+        '''战斗，返回胜者，None为兑子'''
+        assert self.value != 31, '地雷不可战斗'
+        if self.value == other.value or self.value == 30 or other.value == 30:
+            return None
+        if self.value >= 33:
+            # 排长及以上
+            if other.value == 31:
+                # 地雷
+                return other
+            else:
+                return self if self.value > other.value else other
+        elif self.value == 32:
+            # 工兵
+            if other.value == 31:
+                # 地雷
+                return self
+            else:
+                return other
+                
+    def move_to(self, position: BoardPosition) -> None:
+        '''移动到指定位置，仅检查合法性，不执行移动'''
+        assert position.board == self.position.board, 'Cannot move to position in another board'
+        if position.board.is_accessible(self, position):
+            # 先确保accessible positions中包含position
+            raise NotAllowed('Position not accessible')
+        self.position.board.troop_move_to(self, position)
 
 
 class Board:
     '''棋盘类，用户可见的棋盘以及服务器、用户操作交互接口'''
-    pass
+    
+    def is_ocuppied(self, position: BoardPosition) -> bool:
+        '''判断位置是否被占据'''
+        pass
+
+    def is_friend(self, p1: Player, p2: Player) -> bool:
+        '''判断两个玩家是否为友方'''
+        pass
+
+    def is_accessible(self, troop: Troop, traget_position: BoardPosition) -> bool:
+        '''判断位置是否可到达'''
+        pass
+
+    def accessible_positions(self, troop: Troop) -> list[BoardPosition]:
+        '''获取棋子可到达的位置'''
+        now_position = troop.position
+        accessible_positions = []
+        if now_position.type_ == BoardPositionType.大本营:
+            pass
+            # raise NotAllowed('Cannot move in basecamp')
+        elif now_position.type_ == BoardPositionType.铁路:
+            pass
+        else:
+            for target_position in now_position.neighbours():
+                if self.is_ocuppied(target_position):
+                    if (not self.is_friend(troop.owner, self.troop_at(target_position))
+                        and target_position.type_ != BoardPositionType.行营):
+                        accessible_positions.append(target_position)
+                else:
+                    accessible_positions.append(target_position)
+        return accessible_positions
+        pass
+    
+    def troop_at(self, position: BoardPosition) -> Troop:
+        '''获取位置上的棋子，无则返回None'''
+        pass
+    
+    def troop_move_to(self, troop: Troop, traget_position: BoardPosition) -> None:
+        '''棋子移动执行逻辑，由Troop调用'''
+        pass
 
 
